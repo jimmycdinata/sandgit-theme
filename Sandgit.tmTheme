@@ -1,124 +1,122 @@
-<?php
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
 
-namespace Som\Controllers;
+	Name:		Sandgit
+	Author:		Jimmy Chandra
+	License:	Public Domain Mark 1.0
+	URL:		https://github.com/jimmycdinata/sandgit-theme
+-->
+<plist version="1.0">
+<dict>
+	<key>name</key>
+	<string>Sandgit</string>
+	<key>settings</key>
+	<array>
+		<dict>
+			<key>settings</key>
+			<dict>
+				<key>background</key>
+				<string>#F9F5EF</string>
+				<key>caret</key>
+				<string>#00C4FE</string>
+				<key>foreground</key>
+				<string>#303030</string>
+				<key>invisibles</key>
+				<string>#CABB9C</string>
+				<key>lineHighlight</key>
+				<string>#F0E7D8</string>
+				<key>selection</key>
+				<string>#E5F4F8</string>
+				<key>selectionBorder</key>
+				<string>#00C4FE</string>
+				<key>findHighlight</key>
+				<string>#FFCA7A</string>
+				<key>findHighlightForeground</key>
+				<string>#9D5E00</string>
+				<key>activeGuide</key>
+				<string>#9D550FB0</string>
+				<key>bracketsForeground</key>
+				<string>#08F8F2</string>
+				<key>bracketsOptions</key>
+				<string>underline</string>
+				<key>bracketContentsForeground</key>
+				<string>#08F8F2</string>
+				<key>bracketContentsOptions</key>
+				<string>underline</string>
+				<key>tagsOptions</key>
+				<string>stippled_underline</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>String</string>
+			<key>scope</key>
+			<string>keyword.control, storage, keyword.other</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#993399</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>String</string>
+			<key>scope</key>
+			<string>support</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#1ba1e2</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>String</string>
+			<key>scope</key>
+			<string>string</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#f63817</string>
+			</dict>
+		</dict>
 
-use Phalcon\Tag;
-
-use Som\FormatUtil\DateUtil,
-	Som\FormatUtil\CurrencyUtil,
-	Som\Models\Store,
-	Som\Models\Motor,
-	Som\Models\ReceivingHeader,
-	Som\Models\ReceivingDetail
-	;
-
-class MotorController extends ControllerBase
-{
-	public function initialize() {
-		$this->view->setTemplateBefore('private');
-		$this->assets->addJs('js/som-motor.js');
-	}
-
-	public function moveAction() {	
-
-		if ($this->request->getPost('motor-selected-contents', 'striptags')) {
-			$content = $this->request->getPost('motor-selected-contents', 'striptags');
-			
-			if (strpos($content, '[{}]') !== 0) {
-				$items = json_decode($content);
-				$motorIdList = array();
-				foreach ($items as $item) {
-					$motorIdList[] = $item->id;
-				}
-				$motors = Motor::query()
-									->where('id IN ('.implode(',', $motorIdList).')')
-									->orderBy('id ASC')
-									->execute();
-				$this->view->motors = $motors;
-
-				$stores = Store::query()
-					->where('disable = 0')
-					->andWhere('parent_store_id = :store_id:')
-					->orWhere('id = :id:')
-					->bind(array('id' => $this->auth->getStoreId(), 'store_id' => $this->auth->getStoreId()))
-					->orderBy('id ASC')
-					->execute();
-				$this->view->stores = $stores;
-
-				$this->view->date = date('d-m-Y');
-
-				// User try to save motor's movement
-				if ($this->request->getPost('move_date', 'striptags')) {
-					$this->db->begin();
-
-					$header = new ReceivingHeader();
-
-					$header->print = 0;
-					$header->tag = $this->flag->value->motormove; // 1 motor's move
-					$header->create_date = DateUtil::formatDatabaseDate($this->request->getPost('move_date', 'striptags'));
-					//$header->receive_date = null; // Harus null karena nanti surat jalan akan kembali, lalu baru di-checklist (mengisi receive_date)
-					$header->store_create_id = $this->auth->getStoreId();
-
-					$store = Store::findFirstById($this->request->getPost('stores', 'int'));
-					$header->store_receive_id = $store->id;
-					
-					$header->holder_create_id = $this->auth->getHolderId();
-					//$header->holder_receive_id = null; // Sama seperti receive_date
-					$header->holder_time = DateUtil::now();
-
-					$details = array();
-					foreach ($motorIdList as $id) {
-						$detail = new ReceivingDetail();
-						$detail->motor_id = $id;
-						$details[] = $detail;
-					}
-					$header->details = $details;
-					
-					if ($header->save()) {
-						$this->db->commit();
-						$this->session->remove('motor_id_selected');
-						$this->flashSession->success('Success transport ' . count($motorIdList) . ' motor(s) to <strong>' . $store->name . '</strong> at '.date('d-m-Y H:i:s'));
-					} else {
-						$this->db->rollback();
-						foreach ($header->getMessages() as $message) {
-							$this->flashSession->error($message);
-						}
-					}
-				}
-			}
-		}
-	}
-
-	public function getMotorSelectedAction()	{
-		$this->view->disable();
-
-		$data = array();
-		
-		$data['error'] = 'Some error occured';
-		
-		if ($this->request->isAjax() == true) {
-			$motorIds = $this->session->get('motor_id_selected');
-			$motors = Motor::query()
-				->where('id IN ('.$motorIds.')')
-				->execute();
-
-			$result = array();
-			foreach ($motors as $m) {
-				$result[] = array(
-					'id' => $m->id,
-					'chasis' => $m->chasis,
-					'engine' => $m->engine,
-					'brand' => $m->graphic->brand->name,
-					'color' => $m->graphic->color->name
-				);
-			}
-
-			$data['motors'] = $result;
-			$data['error'] = '';
-		}
-		
-		echo json_encode($data);
-	}
-
-	
-}
+		<dict>
+			<key>name</key>
+			<string>TRUE</string>
+			<key>scope</key>
+			<string>true.constant.language</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#008900</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>FALSE</string>
+			<key>scope</key>
+			<string>false.constant.language</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#890000</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>Comment</string>
+			<key>scope</key>
+			<string>comment</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#BBAB93</string>
+			</dict>
+		</dict>
+	</array>
+	<key>uuid</key>
+	<string>79e8a3cd-3c25-3a28-29e1-ccfead251b1e</string>
+</dict>
+</plist>
